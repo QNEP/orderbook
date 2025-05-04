@@ -1,0 +1,24 @@
+[package]
+name = "orderbook"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tabled = "0.18"
+
+[dev-dependencies]
+criterion = "0.5"
+
+
+[profile.bench]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+
+[[bench]]
+name = "tick_conversion"
+harness = false
+
+[[bench]]
+name = "process_update"
+harness = false
