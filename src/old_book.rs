@@ -13,7 +13,7 @@ pub struct BTreeOrderBook {
 }
 
 impl BTreeOrderBook {
-    pub fn process_snapshot(&mut self, event: &TickUpdate) {
+    pub fn process_tick_update(&mut self, event: &TickUpdate) {
         self.bids.clear();
         self.asks.clear();
 
