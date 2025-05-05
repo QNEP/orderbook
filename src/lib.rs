@@ -185,6 +185,8 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
             if lowest_ask.tick < self.asks_0_tick {
                 self.rebalance_asks_lower(lowest_ask.tick);
                 self.best_ask_i = (lowest_ask.tick - self.asks_0_tick) as u16;
+            } else if lowest_ask.tick < self.best_ask_i as u32 + self.asks_0_tick {
+                self.best_ask_i = (lowest_ask.tick - self.asks_0_tick) as u16;
             }
 
             self.insert_ask(lowest_ask);
@@ -202,7 +204,10 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
             if highest_bid.tick > self.bids_0_tick {
                 self.rebalance_bids_higher(highest_bid.tick);
                 self.best_bid_i = (self.bids_0_tick - highest_bid.tick) as u16;
+            } else if highest_bid.tick > self.bids_0_tick - self.best_bid_i as u32 {
+                self.best_bid_i = (self.bids_0_tick - highest_bid.tick) as u16;
             }
+
             self.insert_bid(highest_bid);
         };
 
@@ -242,23 +247,22 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
             return;
         }
 
-        let mut new_best_bid = 0;
         // might be possible to start at best_bid_i as optimization
         for i in 0..CACHE_SLOTS {
             if self.bids[i] > EPSILON {
-                new_best_bid = i as u16;
+                self.best_bid_i = i as u16;
                 break;
             }
         }
 
         // 16, 4
         // 0,0,0,0    0,0,0,0, 1
-        if new_best_bid > const { CACHE_EMPTY_SLOTS as u16 * 2 } {
+        if self.best_bid_i > const { CACHE_EMPTY_SLOTS as u16 * 2 } {
             // rebalance
 
             // newbestbid - shift = cache empty
             // newbestbid - cache empty = shift
-            let shift = (new_best_bid - CACHE_EMPTY_SLOTS as u16) as usize;
+            let shift = (self.best_bid_i - CACHE_EMPTY_SLOTS as u16) as usize;
             self.bids_0_tick -= shift as u32;
             for i in CACHE_EMPTY_SLOTS..(CACHE_SLOTS - shift) {
                 self.bids[i] = self.bids[i + shift]
@@ -280,17 +284,16 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
             return;
         }
 
-        let mut new_best_ask = 0;
         // might be possible to start at best_ask_i as optimization
         for i in 0..CACHE_SLOTS {
             if self.asks[i] > EPSILON {
-                new_best_ask = i as u16;
+                self.best_ask_i = i as u16;
                 break;
             }
         }
 
-        if new_best_ask > const { CACHE_EMPTY_SLOTS as u16 * 2 } {
-            let shift = (new_best_ask - CACHE_EMPTY_SLOTS as u16) as usize;
+        if self.best_ask_i > const { CACHE_EMPTY_SLOTS as u16 * 2 } {
+            let shift = (self.best_ask_i - CACHE_EMPTY_SLOTS as u16) as usize;
             self.asks_0_tick += shift as u32;
             for i in CACHE_EMPTY_SLOTS..(CACHE_SLOTS - shift) {
                 self.asks[i] = self.asks[i + shift]
@@ -449,6 +452,7 @@ mod tests {
         assert_eq!(book.bids_heap.len(), 1);
         assert_eq!(book.bids_heap.get(&97), Some(&30.0));
     }
+
     #[test]
     fn update_order_book_with_level_removal_and_addition() {
         let mut book: OrderBook<3, 1> = OrderBook::new(2u8.try_into().unwrap());
@@ -645,7 +649,7 @@ mod tests {
 
         println!("After rebalance higher:\n{book:#?}");
         println!("{book}");
-        
+
         assert_eq!(book.asks_0_tick, 102);
         assert_eq!(book.asks[0], 0.0);
         assert_eq!(book.asks[1], 35.0); // tick 103
@@ -653,5 +657,141 @@ mod tests {
         assert_eq!(book.asks[3], 50.0); // tick 105
         assert_eq!(*book.asks_heap.get(&114).unwrap(), 100.0);
         assert_eq!(book.asks_heap.len(), 1);
+    }
+
+    #[test]
+    fn test_new_best_ask_i_lower_without_rebalance() {
+        let mut book: OrderBook<4, 1> = OrderBook::new(2u8.try_into().unwrap());
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 0,
+            ask_levels: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
+            bid_levels: vec![],
+        });
+
+        println!("Initial state:\n{book:#?}");
+        println!("{book}");
+
+        assert_eq!(book.asks_0_tick, 100);
+        assert_eq!(book.best_ask_i, 1);
+        assert_eq!(book.asks[1], 5.0); // tick 101
+        assert_eq!(book.asks[2], 20.0); // tick 102
+        assert_eq!(book.asks[3], 30.0); // tick 103
+        assert_eq!(book.asks_heap.len(), 0);
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 1,
+            ask_levels: vec![tl(100, 1.0)],
+            bid_levels: vec![],
+        });
+
+        println!("After rebalance higher:\n{book:#?}");
+        println!("{book}");
+
+        assert_eq!(book.best_ask_i, 0);
+        assert_eq!(book.asks[0], 1.0); // tick 100
+    }
+
+    #[test]
+    fn test_new_best_ask_i_higher_without_rebalance() {
+        let mut book: OrderBook<4, 1> = OrderBook::new(2u8.try_into().unwrap());
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 0,
+            ask_levels: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
+            bid_levels: vec![],
+        });
+
+        println!("Initial state:\n{book:#?}");
+        println!("{book}");
+
+        assert_eq!(book.asks_0_tick, 100);
+        assert_eq!(book.best_ask_i, 1);
+        assert_eq!(book.asks[1], 5.0); // tick 101
+        assert_eq!(book.asks[2], 20.0); // tick 102
+        assert_eq!(book.asks[3], 30.0); // tick 103
+        assert_eq!(book.asks_heap.len(), 0);
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 1,
+            ask_levels: vec![tl(101, 0.0)],
+            bid_levels: vec![],
+        });
+
+        println!("After rebalance higher:\n{book:#?}");
+        println!("{book}");
+
+        assert_eq!(book.asks_0_tick, 100);
+        assert_eq!(book.best_ask_i, 2);
+        assert_eq!(book.asks[1], 0.0); // tick 101
+        assert_eq!(book.asks[2], 20.0); // tick 102
+    }
+
+    #[test]
+    fn test_new_best_bid_i_higher_without_rebalance() {
+        let mut book: OrderBook<4, 1> = OrderBook::new(2u8.try_into().unwrap());
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 0,
+            ask_levels: vec![],
+            bid_levels: vec![tl(99, 5.0), tl(98, 20.0), tl(97, 30.0)],
+        });
+
+        println!("Initial state:\n{book:#?}");
+        println!("{book}");
+
+        assert_eq!(book.bids_0_tick, 100);
+        assert_eq!(book.best_bid_i, 1);
+        assert_eq!(book.bids[1], 5.0); // tick 99
+        assert_eq!(book.bids[2], 20.0); // tick 98
+        assert_eq!(book.bids[3], 30.0); // tick 97
+        assert_eq!(book.bids_heap.len(), 0);
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 1,
+            ask_levels: vec![],
+            bid_levels: vec![tl(100, 1.0)],
+        });
+
+        println!("After update:\n{book:#?}");
+        println!("{book}");
+
+        assert_eq!(book.best_bid_i, 0);
+        assert_eq!(book.bids[0], 1.0); // tick 100
+    }
+
+    #[test]
+    fn test_new_best_bid_i_lower_without_rebalance() {
+        let mut book: OrderBook<4, 1> = OrderBook::new(2u8.try_into().unwrap());
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 0,
+            ask_levels: vec![],
+            bid_levels: vec![tl(99, 5.0), tl(98, 20.0), tl(97, 30.0)],
+        });
+
+        println!("Initial state:\n{book:#?}");
+        println!("{book}");
+
+        assert_eq!(book.bids_0_tick, 100);
+        assert_eq!(book.best_bid_i, 1);
+        assert_eq!(book.bids[1], 5.0); // tick 99
+        assert_eq!(book.bids[2], 20.0); // tick 98
+        assert_eq!(book.bids[3], 30.0); // tick 97
+        assert_eq!(book.bids_heap.len(), 0);
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 1,
+            ask_levels: vec![],
+            bid_levels: vec![tl(99, 0.0)],
+        });
+
+        println!("After update:\n{book:#?}");
+        println!("{book}");
+
+        assert_eq!(book.bids_0_tick, 100);
+        assert_eq!(book.best_bid_i, 2);
+        assert_eq!(book.bids[1], 0.0); // tick 99
+        assert_eq!(book.bids[2], 20.0); // tick 98
     }
 }
