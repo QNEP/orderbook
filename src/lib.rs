@@ -212,11 +212,16 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
     fn insert_bid(&mut self, bid: TickLevel) {
         debug_assert!(bid.tick <= self.bids_0_tick);
 
-        let i = (self.bids_0_tick - bid.tick) as usize;
+        let i = self.bids_0_tick - bid.tick;
 
+        // best bid removed
+        if i == self.best_bid_i as u32 && bid.size < EPSILON {
+            self.bids[i as usize] = bid.size;
+            self.update_best_bid_i();
+        }
         // cache
-        if i < CACHE_SLOTS {
-            self.bids[i] = bid.size;
+        else if (i as usize) < CACHE_SLOTS {
+            self.bids[i as usize] = bid.size;
         }
         // heap escape - 0 size
         else if bid.size < EPSILON {
@@ -231,16 +236,30 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
         }
     }
 
+    fn update_best_bid_i(&mut self) {
+        for i in 0..CACHE_SLOTS {
+            if self.bids[i] > EPSILON {
+                self.best_bid_i = i as u16;
+                break;
+            }
+        }
+    }
+
     /// invariant: ask tick >= asks_0_tick
     #[inline]
     fn insert_ask(&mut self, ask: TickLevel) {
         debug_assert!(ask.tick >= self.asks_0_tick);
 
-        let i = (ask.tick - self.asks_0_tick) as usize;
+        let i = ask.tick - self.asks_0_tick;
 
+        // best ask removed
+        if i == self.best_ask_i as u32 && ask.size < EPSILON {
+            self.asks[i as usize] = ask.size;
+            self.update_best_ask_i();
+        }
         // cache
-        if i < CACHE_SLOTS {
-            self.asks[i] = ask.size;
+        if (i as usize) < CACHE_SLOTS {
+            self.asks[i as usize] = ask.size;
         }
         // heap escape - 0 size
         else if ask.size < EPSILON {
@@ -252,6 +271,15 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
                 .entry(ask.tick)
                 .and_modify(|sz| *sz = ask.size)
                 .or_insert(ask.size);
+        }
+    }
+
+    fn update_best_ask_i(&mut self) {
+        for i in 0..CACHE_SLOTS {
+            if self.asks[i] > EPSILON {
+                self.best_ask_i = i as u16;
+                break;
+            }
         }
     }
 
