@@ -23,26 +23,26 @@ pub struct FloatLevel {
 pub struct TickUpdate {
     pub sequence_id: u64,
     /// invariant: ask_levels must be sorted lowest to highest price
-    pub ask_levels: Vec<TickLevel>, // Vec<T, I> newtype to track invariants like pointer from zerocopy cool idea to mark sorted
+    pub asks: Vec<TickLevel>, // Vec<T, I> newtype to track invariants like pointer from zerocopy cool idea to mark sorted
     /// invariant: bid_levels must be sorted highest to lowest price
-    pub bid_levels: Vec<TickLevel>,
+    pub bids: Vec<TickLevel>,
 }
 
 impl TickUpdate {
     #[inline]
     pub fn best_bid(&self) -> Option<TickLevel> {
-        self.bid_levels.first().copied()
+        self.bids.first().copied()
     }
     #[inline]
     pub fn bids(&self) -> impl ExactSizeIterator<Item = TickLevel> {
-        self.bid_levels.iter().copied()
+        self.bids.iter().copied()
     }
     #[inline]
     pub fn best_ask(&self) -> Option<TickLevel> {
-        self.ask_levels.first().copied()
+        self.asks.first().copied()
     }
     #[inline]
     pub fn asks(&self) -> impl ExactSizeIterator<Item = TickLevel> {
-        self.ask_levels.iter().copied()
+        self.asks.iter().copied()
     }
 }

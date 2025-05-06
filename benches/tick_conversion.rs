@@ -7,13 +7,13 @@ fn bench_tick_conversion(c: &mut Criterion) {
     let decimals: Decimals = 2u8.try_into().unwrap();
     group.bench_function("reference", move |b| {
         b.iter(|| {
-            black_box(decimals.reference_tick_to_f64(black_box(1234)));
+            black_box(black_box(decimals).reference_tick_to_f64(black_box(1234)));
         });
     });
 
     group.bench_function("fast", move |b| {
         b.iter(|| {
-            black_box(decimals.fast_tick_to_f64(black_box(1234)));
+            black_box(black_box(decimals).fast_tick_to_f64(black_box(1234)));
         });
     });
 

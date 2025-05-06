@@ -71,6 +71,24 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
         }
     }
 
+    pub fn best_bid(&self) -> FloatLevel {
+        FloatLevel {
+            price: self
+                .tick_decimals
+                .fast_tick_to_f64(self.bids_0_tick - self.best_bid_i as u32),
+            size: self.bids[self.best_bid_i as usize],
+        }
+    }
+
+    pub fn best_ask(&self) -> FloatLevel {
+        FloatLevel {
+            price: self
+                .tick_decimals
+                .fast_tick_to_f64(self.asks_0_tick + self.best_ask_i as u32),
+            size: self.asks[self.best_ask_i as usize],
+        }
+    }
+
     pub fn asks(&self) -> impl DoubleEndedIterator<Item = FloatLevel> {
         let asks_heap = self.asks_heap.iter().map(|(tick, size)| FloatLevel {
             price: self.tick_decimals.fast_tick_to_f64(*tick),
@@ -212,20 +230,16 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
             }
         }
 
-        // 16, 4
-        // 0,0,0,0    0,0,0,0, 1
+        // rebalance
         if self.best_bid_i > const { CACHE_EMPTY_SLOTS as u16 * 2 } {
-            // rebalance
-
-            // newbestbid - shift = cache empty
-            // newbestbid - cache empty = shift
-            let shift = (self.best_bid_i - CACHE_EMPTY_SLOTS as u16) as usize;
+            let shift = self.best_bid_i - CACHE_EMPTY_SLOTS as u16;
             self.bids_0_tick -= shift as u32;
-            for i in CACHE_EMPTY_SLOTS..(CACHE_SLOTS - shift) {
-                self.bids[i] = self.bids[i + shift]
+            self.best_bid_i -= shift;
+            for i in CACHE_EMPTY_SLOTS..(CACHE_SLOTS - shift as usize) {
+                self.bids[i] = self.bids[i + shift as usize]
             }
 
-            for i in (CACHE_SLOTS - shift)..CACHE_SLOTS {
+            for i in (CACHE_SLOTS - shift as usize)..CACHE_SLOTS {
                 let tick = self.bids_0_tick - i as u32;
                 if let Some(sz) = self.bids_heap.get(&tick) {
                     self.bids[i] = *sz;
@@ -250,13 +264,15 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
         }
 
         if self.best_ask_i > const { CACHE_EMPTY_SLOTS as u16 * 2 } {
-            let shift = (self.best_ask_i - CACHE_EMPTY_SLOTS as u16) as usize;
+            let shift = self.best_ask_i - CACHE_EMPTY_SLOTS as u16;
             self.asks_0_tick += shift as u32;
-            for i in CACHE_EMPTY_SLOTS..(CACHE_SLOTS - shift) {
-                self.asks[i] = self.asks[i + shift]
+            self.best_ask_i -= shift;
+
+            for i in CACHE_EMPTY_SLOTS..(CACHE_SLOTS - shift as usize) {
+                self.asks[i] = self.asks[i + shift as usize]
             }
 
-            for i in (CACHE_SLOTS - shift)..CACHE_SLOTS {
+            for i in (CACHE_SLOTS - shift as usize)..CACHE_SLOTS {
                 let tick = self.asks_0_tick + i as u32;
                 if let Some(sz) = self.asks_heap.get(&tick) {
                     self.asks[i] = *sz;
@@ -367,17 +383,46 @@ impl<const CACHE_SLOTS: usize, const CACHE_EMPTY_SLOTS: usize>
 
         self.asks_0_tick = new_asks_0_tick;
     }
-
-    // TODO: rebalance asks higher / bids lower
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::TickLevel;
 
     fn tl(tick: u32, size: f64) -> TickLevel {
         TickLevel { tick, size }
+    }
+
+    #[test]
+    fn best_ask() {
+        let mut book: OrderBook<3, 1> = OrderBook::new(2u8.try_into().unwrap());
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 0,
+            asks: vec![tl(2, 5.0)],
+            bids: vec![],
+        });
+
+        let best_ask = book.best_ask();
+
+        assert_eq!(best_ask.price, 0.02);
+        assert_eq!(best_ask.size, 5.0);
+    }
+
+    #[test]
+    fn best_bid() {
+        let mut book: OrderBook<3, 1> = OrderBook::new(2u8.try_into().unwrap());
+
+        book.process_tick_update(&TickUpdate {
+            sequence_id: 0,
+            asks: vec![],
+            bids: vec![tl(1, 10.0)],
+        });
+
+        let best_bid = book.best_bid();
+
+        assert_eq!(best_bid.price, 0.01);
+        assert_eq!(best_bid.size, 10.0);
     }
 
     #[test]
@@ -386,8 +431,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![tl(101, 5.0), tl(102, 15.0), tl(103, 25.0)],
-            bid_levels: vec![tl(99, 10.0), tl(98, 20.0), tl(97, 30.0)],
+            asks: vec![tl(101, 5.0), tl(102, 15.0), tl(103, 25.0)],
+            bids: vec![tl(99, 10.0), tl(98, 20.0), tl(97, 30.0)],
         });
 
         println!("{book:#?}");
@@ -416,8 +461,8 @@ mod tests {
 
         let init = TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![tl(101, 5.0)],
-            bid_levels: vec![tl(99, 10.0)],
+            asks: vec![tl(101, 5.0)],
+            bids: vec![tl(99, 10.0)],
         };
 
         book.process_tick_update(&init);
@@ -435,8 +480,8 @@ mod tests {
 
         let update = TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![tl(101, 0.0), tl(102, 15.0)],
-            bid_levels: vec![tl(99, 0.0), tl(98, 20.0)],
+            asks: vec![tl(101, 0.0), tl(102, 15.0)],
+            bids: vec![tl(99, 0.0), tl(98, 20.0)],
         };
 
         book.process_tick_update(&update);
@@ -461,8 +506,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![],
-            bid_levels: vec![tl(99, 10.0), tl(98, 20.0), tl(97, 30.0)],
+            asks: vec![],
+            bids: vec![tl(99, 10.0), tl(98, 20.0), tl(97, 30.0)],
         });
 
         println!("Before rebalance:\n{book:#?}");
@@ -476,8 +521,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![],
-            bid_levels: vec![tl(101, 15.0)],
+            asks: vec![],
+            bids: vec![tl(101, 15.0)],
         });
 
         println!("After rebalance higher:\n{book:#?}");
@@ -499,8 +544,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
-            bid_levels: vec![],
+            asks: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
+            bids: vec![],
         });
 
         println!("Before rebalance:\n{book:#?}");
@@ -514,8 +559,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![tl(99, 15.0)],
-            bid_levels: vec![],
+            asks: vec![tl(99, 15.0)],
+            bids: vec![],
         });
 
         println!("After rebalance lower:\n{book:#?}");
@@ -537,8 +582,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![],
-            bid_levels: vec![tl(99, 10.0), tl(98, 20.0), tl(97, 30.0)],
+            asks: vec![],
+            bids: vec![tl(99, 10.0), tl(98, 20.0), tl(97, 30.0)],
         });
 
         println!("Initial state:\n{book:#?}");
@@ -552,8 +597,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![],
-            bid_levels: vec![
+            asks: vec![],
+            bids: vec![
                 tl(99, 0.0),   // Remove
                 tl(98, 0.0),   // Remove
                 tl(97, 35.0),  // Update size
@@ -565,6 +610,7 @@ mod tests {
         println!("After rebalance lower:\n{book:#?}");
         println!("{book}");
         assert_eq!(book.bids_0_tick, 98);
+        assert_eq!(book.best_bid_i, 1);
         assert_eq!(book.bids[0], 0.0);
         assert_eq!(book.bids[1], 35.0); // tick 97
         assert_eq!(book.bids[2], 0.0);
@@ -579,8 +625,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
-            bid_levels: vec![],
+            asks: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
+            bids: vec![],
         });
 
         println!("Initial state:\n{book:#?}");
@@ -594,20 +640,22 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![
+            asks: vec![
                 tl(101, 0.0),   // Remove
                 tl(102, 0.0),   // Remove
                 tl(103, 35.0),  // Update size
                 tl(105, 50.0),  // Add new
                 tl(114, 100.0), // Add new much higher
             ],
-            bid_levels: vec![],
+            bids: vec![],
         });
 
         println!("After rebalance higher:\n{book:#?}");
         println!("{book}");
 
         assert_eq!(book.asks_0_tick, 102);
+        assert_eq!(book.best_ask_i, 1);
+
         assert_eq!(book.asks[0], 0.0);
         assert_eq!(book.asks[1], 35.0); // tick 103
         assert_eq!(book.asks[2], 0.0);
@@ -622,8 +670,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
-            bid_levels: vec![],
+            asks: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
+            bids: vec![],
         });
 
         println!("Initial state:\n{book:#?}");
@@ -638,8 +686,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![tl(100, 1.0)],
-            bid_levels: vec![],
+            asks: vec![tl(100, 1.0)],
+            bids: vec![],
         });
 
         println!("After rebalance higher:\n{book:#?}");
@@ -655,8 +703,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
-            bid_levels: vec![],
+            asks: vec![tl(101, 5.0), tl(102, 20.0), tl(103, 30.0)],
+            bids: vec![],
         });
 
         println!("Initial state:\n{book:#?}");
@@ -671,8 +719,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![tl(101, 0.0)],
-            bid_levels: vec![],
+            asks: vec![tl(101, 0.0)],
+            bids: vec![],
         });
 
         println!("After rebalance higher:\n{book:#?}");
@@ -690,8 +738,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![],
-            bid_levels: vec![tl(99, 5.0), tl(98, 20.0), tl(97, 30.0)],
+            asks: vec![],
+            bids: vec![tl(99, 5.0), tl(98, 20.0), tl(97, 30.0)],
         });
 
         println!("Initial state:\n{book:#?}");
@@ -706,8 +754,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![],
-            bid_levels: vec![tl(100, 1.0)],
+            asks: vec![],
+            bids: vec![tl(100, 1.0)],
         });
 
         println!("After update:\n{book:#?}");
@@ -723,8 +771,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 0,
-            ask_levels: vec![],
-            bid_levels: vec![tl(99, 5.0), tl(98, 20.0), tl(97, 30.0)],
+            asks: vec![],
+            bids: vec![tl(99, 5.0), tl(98, 20.0), tl(97, 30.0)],
         });
 
         println!("Initial state:\n{book:#?}");
@@ -739,8 +787,8 @@ mod tests {
 
         book.process_tick_update(&TickUpdate {
             sequence_id: 1,
-            ask_levels: vec![],
-            bid_levels: vec![tl(99, 0.0)],
+            asks: vec![],
+            bids: vec![tl(99, 0.0)],
         });
 
         println!("After update:\n{book:#?}");

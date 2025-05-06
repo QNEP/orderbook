@@ -17,11 +17,11 @@ impl BTreeOrderBook {
         self.bids.clear();
         self.asks.clear();
 
-        for level in &event.bid_levels {
+        for level in &event.bids {
             self.bids.insert(level.tick, *level);
         }
 
-        for level in &event.ask_levels {
+        for level in &event.asks {
             self.asks.insert(level.tick, *level);
         }
 

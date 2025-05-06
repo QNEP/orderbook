@@ -18,8 +18,8 @@ fn create_tick_update(side_size: usize, midprice: u32) -> TickUpdate {
 
     TickUpdate {
         sequence_id: 0,
-        ask_levels,
-        bid_levels,
+        asks: ask_levels,
+        bids: bid_levels,
     }
 }
 
@@ -46,14 +46,6 @@ fn bench_process_tick_update(c: &mut Criterion) {
     }
 
     // New parametrized OrderBook benchmarks
-    bench_orderbook!(
-        "update slots: 8, empty: 2",
-        OrderBook::<8, 2>::new(2u8.try_into().unwrap())
-    );
-    bench_orderbook!(
-        "update slots: 32, empty: 4",
-        OrderBook::<32, 4>::new(2u8.try_into().unwrap())
-    );
     bench_orderbook!(
         "update slots: 128, empty: 32",
         OrderBook::<128, 32>::new(2u8.try_into().unwrap())
@@ -103,14 +95,6 @@ fn bench_midprice_trend_up(c: &mut Criterion) {
 
     // New parametrized OrderBook benchmarks
     bench_trend_up!(
-        "midprice_trend_up slots: 8, empty: 2",
-        OrderBook::<8, 2>::new(2u8.try_into().unwrap())
-    );
-    bench_trend_up!(
-        "midprice_trend_up slots: 32, empty: 4",
-        OrderBook::<32, 4>::new(2u8.try_into().unwrap())
-    );
-    bench_trend_up!(
         "midprice_trend_up slots: 128, empty: 32",
         OrderBook::<128, 32>::new(2u8.try_into().unwrap())
     );
@@ -157,14 +141,6 @@ fn bench_midprice_trend_down(c: &mut Criterion) {
     }
 
     // New parametrized OrderBook benchmarks
-    bench_trend_down!(
-        "midprice_trend_down slots: 8, empty: 2",
-        OrderBook::<8, 2>::new(2u8.try_into().unwrap())
-    );
-    bench_trend_down!(
-        "midprice_trend_down slots: 32, empty: 4",
-        OrderBook::<32, 4>::new(2u8.try_into().unwrap())
-    );
     bench_trend_down!(
         "midprice_trend_down slots: 128, empty: 32",
         OrderBook::<128, 32>::new(2u8.try_into().unwrap())
@@ -214,15 +190,6 @@ fn bench_midprice_volatile(c: &mut Criterion) {
         };
     }
 
-    // New parametrized OrderBook benchmarks
-    bench_volatile!(
-        "midprice_volatile slots: 8, empty: 2",
-        OrderBook::<8, 2>::new(2u8.try_into().unwrap())
-    );
-    bench_volatile!(
-        "midprice_volatile slots: 32, empty: 4",
-        OrderBook::<32, 4>::new(2u8.try_into().unwrap())
-    );
     bench_volatile!(
         "midprice_volatile slots: 128, empty: 32",
         OrderBook::<128, 32>::new(2u8.try_into().unwrap())
